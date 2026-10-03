@@ -145,7 +145,6 @@
   var ORDER = { G: 0, D: 1, R: 2, '?': 3 };
   var mode = 'all';
   /* 距離篩選（公里，0 = 不限），記在瀏覽器裡 */
-  var RADII = [0, 1, 3, 5, 10];
   var radius = 0;
   try { radius = +localStorage.getItem('dmx_radius') || 0; } catch (e) {}
   function chip(attr, val, label, on) {
@@ -193,7 +192,23 @@
     '<div id="dmx-l" style="overflow:auto;-webkit-overflow-scrolling:touch;padding:0 8px 8px"></div></div>';
   document.body.appendChild(box);
   var q = box.querySelector('#dmx-q'), list = box.querySelector('#dmx-l'), stat = box.querySelector('#dmx-s'), modes = box.querySelector('#dmx-m');
+  /* 範圍輸入框只建立一次，render 時不重畫，打字才不會被打斷 */
   var radiusBar = box.querySelector('#dmx-r');
+  radiusBar.innerHTML = '<span style="font-size:13px;color:#666">📍 只顯示</span>' +
+    '<input id="dmx-km" type="number" inputmode="decimal" min="0" step="0.5" placeholder="不限" style="width:' + (mobile ? '72px' : '60px') + ';padding:' + (mobile ? '6px' : '3px') + ';border:1px solid #ccc;border-radius:6px;font-size:16px;text-align:center">' +
+    '<span style="font-size:13px;color:#666">公里內</span>' +
+    '<span id="dmx-km-x" style="cursor:pointer;color:#c2185b;font-size:13px;padding:0 4px">清除</span>' +
+    '<span id="dmx-km-msg" style="font-size:12px;color:#e65100"></span>';
+  var kmInput = radiusBar.querySelector('#dmx-km'), kmMsg = radiusBar.querySelector('#dmx-km-msg');
+  if (radius) kmInput.value = radius;
+  function setRadius(v) {
+    radius = v > 0 ? v : 0;
+    try { localStorage.setItem('dmx_radius', radius); } catch (e) {}
+    if (radius && locMsg) locMsg = '';
+    render();
+  }
+  kmInput.oninput = function () { setRadius(parseFloat(kmInput.value)); };
+  radiusBar.querySelector('#dmx-km-x').onclick = function () { kmInput.value = ''; setRadius(0); };
   var body = box.querySelector('#dmx-body'), minBtn = box.querySelector('#dmx-min');
   function collapse(on) { body.style.display = on ? 'none' : 'flex'; minBtn.textContent = on ? '＋' : '－'; }
   minBtn.onclick = function () { collapse(body.style.display !== 'none'); };
@@ -209,17 +224,7 @@
     if (radius) locate();
     if (me) all.forEach(function (x) { x.__dist = dist(me[0], me[1], +x.c, +x.d); });
     if (radius && me) all = all.filter(function (x) { return x.__dist <= radius * 1000; });
-    radiusBar.innerHTML = '<span style="font-size:12px;color:#666">📍範圍</span>' + RADII.map(function (r) {
-      return chip('data-r', r, r ? r + ' 公里' : '不限', radius === r);
-    }).join('') + (radius && !me ? '<span style="font-size:12px;color:#e65100">' + esc(locMsg || '取得定位中…') + '</span>' : '');
-    Array.prototype.forEach.call(radiusBar.querySelectorAll('[data-r]'), function (el) {
-      el.onclick = function () {
-        radius = +el.getAttribute('data-r');
-        try { localStorage.setItem('dmx_radius', radius); } catch (e) {}
-        if (radius && locMsg) { locMsg = ''; }
-        render();
-      };
-    });
+    kmMsg.textContent = radius && !me ? (locMsg || '取得定位中…') : '';
     var cnt = { G: 0, D: 0, R: 0, '?': 0 };
     all.forEach(function (x) { cnt[x.__k]++; });
     var opts = [['all', '全部 ' + all.length], ['R', '團體戰 ' + cnt.R], ['D', '極巨 ' + cnt.D], ['G', '超極巨 ' + cnt.G]];
