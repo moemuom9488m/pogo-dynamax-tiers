@@ -117,7 +117,7 @@
     return t === 'mega' ? tag('#00897b', 'Mega') : t === 'shadow' ? tag('#37474f', '暗影') : tag('#1565c0', '團體戰');
   }
   /* 極巨化星級對照表：打開時讀 GitHub 上每天自動更新的版本，失敗就用內建的舊表；API 本身沒有極巨化星級 */
-  var TIER = {"D":{"1":1,"4":1,"7":1,"10":1,"25":1,"58":1,"63":1,"66":2,"92":1,"98":1,"106":3,"107":3,"113":3,"125":3,"126":3,"129":1,"133":2,"138":1,"140":1,"146":5,"163":1,"213":2,"237":3,"280":1,"302":3,"320":2,"328":1,"349":2,"363":1,"374":3,"415":1,"519":1,"524":1,"527":1,"529":1,"546":1,"554":2,"568":1,"615":3,"633":3,"686":1,"761":1,"766":3,"780":3,"810":1,"813":1,"816":1,"819":1,"821":1,"831":1,"856":1,"870":3},"G":{},"updated":"2026-10-03"};
+  var TIER = {"D":{"1":1,"4":1,"7":1,"10":1,"25":1,"58":1,"63":1,"66":2,"92":1,"98":1,"106":3,"107":3,"113":3,"125":3,"126":3,"129":1,"133":2,"138":1,"140":1,"146":5,"163":1,"213":2,"237":3,"280":1,"302":3,"320":2,"328":1,"349":2,"363":1,"374":3,"415":1,"519":1,"524":1,"527":1,"529":1,"546":1,"554":2,"568":1,"615":3,"633":3,"686":1,"761":1,"766":3,"780":3,"810":1,"813":1,"816":1,"819":1,"821":1,"831":1,"856":1,"870":3},"G":{"815":6},"updated":"2026-10-03"};
   fetch('https://raw.githubusercontent.com/moemuom9488m/pogo-dynamax-tiers/main/tiers.json', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (t) { if (t && t.D) { TIER = t; render(); } }).catch(function () {});
   function starNum(x) {
     if (x.__k === 'R') return raidType(x) === 'mega' ? 0 : raidStars(x);
@@ -234,8 +234,9 @@
   var geoBar = box.querySelector('#dmx-g');
   geoBar.innerHTML = '<input id="dmx-addr" type="search" enterkeyhint="search" placeholder="地址或地點，例如：台北車站" style="flex:1;min-width:150px;padding:' + (mobile ? '8px' : '4px 6px') + ';border:1px solid #ccc;border-radius:6px;font-size:16px">' +
     '<span id="dmx-addr-go" style="cursor:pointer;background:#c2185b;color:#fff;border-radius:6px;padding:' + (mobile ? '8px 14px' : '4px 10px') + ';font-size:14px">搜尋</span>' +
+    '<div id="dmx-sug" style="display:none;width:100%;border:1px solid #ddd;border-radius:6px;background:#fff;max-height:' + (mobile ? '30vh' : '220px') + ';overflow:auto;box-shadow:0 2px 8px rgba(0,0,0,.15)"></div>' +
     '<div id="dmx-addr-msg" style="width:100%;font-size:12px;color:#666"></div>';
-  var addrInput = geoBar.querySelector('#dmx-addr'), addrMsg = geoBar.querySelector('#dmx-addr-msg');
+  var addrInput = geoBar.querySelector('#dmx-addr'), addrMsg = geoBar.querySelector('#dmx-addr-msg'), sugBox = geoBar.querySelector('#dmx-sug');
   function showOrigin() {
     try {
       if (originMarker) { window.map.removeLayer(originMarker); originMarker = null; }
@@ -247,27 +248,99 @@
     addrMsg.innerHTML = '';
     render();
   }
+  /* 跳到某個地點並設為距離基準點，同時記進「最近搜尋」 */
+  var recent = [];
+  try { recent = JSON.parse(localStorage.getItem('dmx_recent') || '[]'); } catch (e) {}
+  function setOrigin(lat, lon, name) {
+    origin = [+lat, +lon, name];
+    try { window.map.setView([origin[0], origin[1]], 16); } catch (e) {}
+    showOrigin();
+    recent = [{ n: name, a: +lat, o: +lon }].concat(recent.filter(function (r) { return r.n !== name; })).slice(0, 5);
+    try { localStorage.setItem('dmx_recent', JSON.stringify(recent)); } catch (e) {}
+    addrInput.value = name;
+    hideSug();
+    addrMsg.innerHTML = '📍 以「<b>' + esc(name) + '</b>」為中心計算距離　<span id="dmx-addr-x" style="color:#1565c0;cursor:pointer">改回我的位置</span>';
+    addrMsg.querySelector('#dmx-addr-x').onclick = clearOrigin;
+    render();
+  }
   var geoBusy = false;
+  /* 完整搜尋（按「搜尋」或 Enter）：OpenStreetMap Nominatim，只在按下時查一次 */
   function searchPlace() {
     var text = addrInput.value.trim();
     if (!text || geoBusy) return;
     geoBusy = true;
+    hideSug();
     addrMsg.textContent = '搜尋中…';
     var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=tw&accept-language=zh-TW&q=' + encodeURIComponent(text);
     fetch(url).then(function (r) { return r.ok ? r.json() : []; }).then(function (res) {
       geoBusy = false;
       if (!res || !res.length) { addrMsg.innerHTML = '<span style="color:#e65100">找不到「' + esc(text) + '」，試試更完整的地址或地標名稱</span>'; return; }
-      var p = res[0], name = (p.name || p.display_name || text).split(',')[0];
-      origin = [+p.lat, +p.lon, name];
-      try { window.map.setView([origin[0], origin[1]], 16); } catch (e) {}
-      showOrigin();
-      addrMsg.innerHTML = '📍 以「<b>' + esc(name) + '</b>」為中心計算距離　<span id="dmx-addr-x" style="color:#1565c0;cursor:pointer">改回我的位置</span>';
-      addrMsg.querySelector('#dmx-addr-x').onclick = clearOrigin;
-      render();
+      var p = res[0];
+      setOrigin(p.lat, p.lon, (p.name || p.display_name || text).split(',')[0]);
     }).catch(function () { geoBusy = false; addrMsg.innerHTML = '<span style="color:#e65100">搜尋失敗，請檢查網路後再試一次</span>'; });
   }
+
+  /* 打字時的建議：最近搜尋 → 已收集的道館 / 能量點 → Photon 地點建議（Nominatim 禁止拿來做自動完成，所以用專為自動完成設計的 Photon） */
+  var sugItems = [], sugTimer = null, sugSeq = 0;
+  function hideSug() { sugBox.style.display = 'none'; sugItems = []; }
+  function drawSug(text, places) {
+    var t = text.toLowerCase();
+    var items = [], seen = {};
+    function add(icon, name, sub, lat, lon) {
+      var key = name + '|' + sub;
+      if (seen[key] || !name) return;
+      seen[key] = 1;
+      items.push({ icon: icon, name: name, sub: sub, lat: lat, lon: lon });
+    }
+    recent.forEach(function (r) { if (!t || r.n.toLowerCase().indexOf(t) > -1) add('🕘', r.n, '最近搜尋', r.a, r.o); });
+    if (t) {
+      var gyms = 0;
+      Object.keys(store).forEach(function (k) {
+        var x = store[k];
+        if (gyms < 5 && x.g && x.g.toLowerCase().indexOf(t) > -1) { add('🏟', x.g, x.__k === 'D' || x.__k === 'G' ? '能量點' : '道館', +x.c, +x.d); gyms++; }
+      });
+    }
+    (places || []).forEach(function (p) { add('📍', p.name, p.sub, p.lat, p.lon); });
+    sugItems = items.slice(0, 10);
+    if (!sugItems.length) { sugBox.style.display = 'none'; return; }
+    sugBox.innerHTML = sugItems.map(function (s, i) {
+      return '<div class="dmx-sug-i" data-i="' + i + '" style="padding:' + (mobile ? '9px 10px' : '6px 8px') + ';border-top:' + (i ? '1px solid #f0f0f0' : '0') + ';cursor:pointer;font-size:14px">' +
+        s.icon + ' ' + esc(s.name) + ' <span style="color:#999;font-size:12px">' + esc(s.sub || '') + '</span></div>';
+    }).join('');
+    sugBox.style.display = 'block';
+    Array.prototype.forEach.call(sugBox.querySelectorAll('.dmx-sug-i'), function (el) {
+      /* 用 mousedown 先擋住失焦，點選才不會因為輸入框 blur 而被收掉 */
+      el.onmousedown = function (e) { e.preventDefault(); };
+      el.onclick = function () { var s = sugItems[+el.getAttribute('data-i')]; if (s) setOrigin(s.lat, s.lon, s.name); };
+    });
+  }
+  function suggest() {
+    var text = addrInput.value.trim();
+    drawSug(text, []);
+    clearTimeout(sugTimer);
+    if (text.length < 2) return;
+    var seq = ++sugSeq;
+    sugTimer = setTimeout(function () {
+      var c = origin || me || (function () { try { var m = window.map.getCenter(); return [m.lat, m.lng]; } catch (e) { return [25.05, 121.55]; } })();
+      fetch('https://photon.komoot.io/api/?limit=8&bbox=119.3,21.8,122.1,25.4&lat=' + c[0] + '&lon=' + c[1] + '&q=' + encodeURIComponent(text))
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (seq !== sugSeq || !j || !j.features) return;
+          drawSug(addrInput.value.trim(), j.features.map(function (f) {
+            var p = f.properties || {};
+            return { name: p.name || p.street || '', sub: [p.district, p.city].filter(Boolean).join(' '), lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
+          }));
+        }).catch(function () {});
+    }, 350);
+  }
+  addrInput.oninput = suggest;
+  addrInput.onfocus = suggest;
+  addrInput.onblur = function () { setTimeout(hideSug, 200); };
   geoBar.querySelector('#dmx-addr-go').onclick = searchPlace;
-  addrInput.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); addrInput.blur(); searchPlace(); } };
+  addrInput.onkeydown = function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addrInput.blur(); searchPlace(); }
+    else if (e.key === 'Escape') hideSug();
+  };
   var body = box.querySelector('#dmx-body'), minBtn = box.querySelector('#dmx-min');
   function collapse(on) { body.style.display = on ? 'none' : 'flex'; minBtn.textContent = on ? '＋' : '－'; }
   minBtn.onclick = function () { collapse(body.style.display !== 'none'); };
