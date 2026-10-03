@@ -144,6 +144,16 @@
   }
   var ORDER = { G: 0, D: 1, R: 2, '?': 3 };
   var mode = 'all';
+  /* 排序方式：dist = 距離、time = 時間（蛋看孵化時間、王看結束時間），記在瀏覽器裡 */
+  var sortBy = 'dist';
+  try { sortBy = localStorage.getItem('dmx_sort') === 'time' ? 'time' : 'dist'; } catch (e) {}
+  /* 時間排序的依據：還沒孵化的蛋 = 孵化時間；已出現的王 = 結束時間；極巨化點沒有時間，排最後 */
+  function timeKey(x) {
+    if (x.__k !== 'R') return Infinity;
+    var start = parseTime(x.o), end = parseTime(x.p);
+    if (x.i === 'egg' && start > Date.now()) return start;
+    return end || Infinity;
+  }
   /* 距離篩選（公里，0 = 不限），記在瀏覽器裡 */
   var radius = 0;
   try { radius = +localStorage.getItem('dmx_radius') || 0; } catch (e) {}
@@ -187,11 +197,13 @@
     '<div id="dmx-body" style="display:flex;flex-direction:column;min-height:0;flex:1">' +
     '<div style="padding:8px"><input id="dmx-q" type="search" placeholder="輸入寶可夢名稱，例如：列陣兵、蛋" style="width:100%;box-sizing:border-box;padding:' + (mobile ? '10px' : '6px') + ';border:1px solid #ccc;border-radius:6px;font-size:16px">' +
     '<div id="dmx-m" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"></div>' +
+    '<div id="dmx-o" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div>' +
     '<div id="dmx-r" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div>' +
     '<div id="dmx-s" style="color:#666;font-size:12px;margin-top:4px"></div></div>' +
     '<div id="dmx-l" style="overflow:auto;-webkit-overflow-scrolling:touch;padding:0 8px 8px"></div></div>';
   document.body.appendChild(box);
   var q = box.querySelector('#dmx-q'), list = box.querySelector('#dmx-l'), stat = box.querySelector('#dmx-s'), modes = box.querySelector('#dmx-m');
+  var sortBar = box.querySelector('#dmx-o');
   /* 範圍輸入框只建立一次，render 時不重畫，打字才不會被打斷 */
   var radiusBar = box.querySelector('#dmx-r');
   radiusBar.innerHTML = '<span style="font-size:13px;color:#666">📍 只顯示</span>' +
@@ -231,13 +243,21 @@
     if (cnt['?']) opts.push(['?', '未知 ' + cnt['?']]);
     modes.innerHTML = opts.map(function (o) { return chip('data-m', o[0], o[1], mode === o[0]); }).join('');
     Array.prototype.forEach.call(modes.querySelectorAll('[data-m]'), function (el) { el.onclick = function () { mode = el.getAttribute('data-m'); render(); }; });
+    sortBar.innerHTML = '<span style="font-size:13px;color:#666">排序</span>' + chip('data-o', 'dist', '📍 距離', sortBy === 'dist') + chip('data-o', 'time', '⏱ 時間', sortBy === 'time');
+    Array.prototype.forEach.call(sortBar.querySelectorAll('[data-o]'), function (el) {
+      el.onclick = function () {
+        sortBy = el.getAttribute('data-o');
+        try { localStorage.setItem('dmx_sort', sortBy); } catch (e) {}
+        render();
+      };
+    });
 
     var pool = all.filter(function (x) { return mode === 'all' || x.__k === mode; });
     var kw = q.value.trim();
     var hits = pool.filter(function (x) { return !kw || pname(x).indexOf(kw) > -1 || String(x.j) === kw; });
     stat.textContent = (kw ? '符合 ' + hits.length + ' 個，' : '') + '拖動或縮小地圖可收集更多（極巨星級更新：' + (TIER.updated || '?') + '）';
 
-    if (!kw) {
+    if (!kw && sortBy === 'dist') {
       /* 依種類、寶可夢分組；超極巨 → 極巨 → 團體戰（高星級在前） */
       var groups = {};
       pool.forEach(function (x) { var key = x.__k + '|' + pname(x); (groups[key] = groups[key] || []).push(x); });
@@ -256,15 +276,14 @@
       Array.prototype.forEach.call(list.querySelectorAll('.dmx-n'), function (el) { el.onclick = function () { q.value = el.getAttribute('data-n'); render(); }; });
       return;
     }
-    /* 選定寶可夢時取得定位，依距離由近到遠排序；沒有定位時依種類排列 */
+    /* 逐筆清單：時間排序 = 越快孵化 / 越快結束的在前（同時間再看距離）；距離排序 = 由近到遠，沒有定位時依種類 */
     locate();
-    if (me) {
-      hits.sort(function (a, b) { return a.__dist - b.__dist; });
-    } else {
-      hits.sort(function (a, b) { return ORDER[a.__k] - ORDER[b.__k]; });
-    }
+    var byDist = function (a, b) { return me ? a.__dist - b.__dist : ORDER[a.__k] - ORDER[b.__k]; };
+    if (sortBy === 'time') hits.sort(function (a, b) { return (timeKey(a) - timeKey(b)) || byDist(a, b); });
+    else hits.sort(byDist);
+    var locText = me ? '📍 定位精度約 ' + Math.round(me[2]) + ' 公尺' : esc(locMsg || '📍 正在取得定位…');
     var locLine = '<div style="font-size:12px;color:#666;padding:4px 0">' +
-      (me ? '📍 已依距離排序（定位精度約 ' + Math.round(me[2]) + ' 公尺）' : esc(locMsg || '📍 正在取得定位…')) +
+      (sortBy === 'time' ? '⏱ 依時間排序：蛋看孵化時間、王看結束時間　' + locText : (me ? '📍 已依距離排序（定位精度約 ' + Math.round(me[2]) + ' 公尺）' : locText)) +
       '　<span id="dmx-relocate" style="color:#1565c0;cursor:pointer">重新定位</span></div>';
     list.innerHTML = locLine + (hits.map(function (x, i) {
       var v = (x.v || '').split('^');
