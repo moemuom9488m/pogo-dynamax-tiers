@@ -163,8 +163,10 @@
 
   /* 目前位置：[緯度, 經度, 精度公尺] */
   var me = null, locMsg = '', locPending = false;
+  /* 搜尋的地點：[緯度, 經度, 名稱]；有設定時取代手機定位，成為距離的基準點 */
+  var origin = null, originMarker = null;
   function locate() {
-    if (me || locPending || locMsg) return;
+    if (origin || me || locPending || locMsg) return;
     if (!navigator.geolocation) { locMsg = '📍 這個瀏覽器不支援定位'; return; }
     locPending = true;
     navigator.geolocation.getCurrentPosition(function (p) {
@@ -200,7 +202,8 @@
     '<div id="dmx-f" style="display:none">' +
     '<div id="dmx-m" style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap"></div>' +
     '<div id="dmx-o" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div>' +
-    '<div id="dmx-r" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div></div>' +
+    '<div id="dmx-r" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div>' +
+    '<div id="dmx-g" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div></div>' +
     '<div id="dmx-s" style="color:#666;font-size:12px;margin-top:4px"></div></div>' +
     '<div id="dmx-l" style="overflow:auto;-webkit-overflow-scrolling:touch;padding:0 8px 8px"></div></div>';
   document.body.appendChild(box);
@@ -226,6 +229,45 @@
   }
   kmInput.oninput = function () { setRadius(parseFloat(kmInput.value)); };
   radiusBar.querySelector('#dmx-km-x').onclick = function () { kmInput.value = ''; setRadius(0); };
+
+  /* 地址 / 地點搜尋（OpenStreetMap Nominatim）：按下搜尋才查，地圖跳過去，並把那裡當成距離基準點 */
+  var geoBar = box.querySelector('#dmx-g');
+  geoBar.innerHTML = '<input id="dmx-addr" type="search" enterkeyhint="search" placeholder="地址或地點，例如：台北車站" style="flex:1;min-width:150px;padding:' + (mobile ? '8px' : '4px 6px') + ';border:1px solid #ccc;border-radius:6px;font-size:16px">' +
+    '<span id="dmx-addr-go" style="cursor:pointer;background:#c2185b;color:#fff;border-radius:6px;padding:' + (mobile ? '8px 14px' : '4px 10px') + ';font-size:14px">搜尋</span>' +
+    '<div id="dmx-addr-msg" style="width:100%;font-size:12px;color:#666"></div>';
+  var addrInput = geoBar.querySelector('#dmx-addr'), addrMsg = geoBar.querySelector('#dmx-addr-msg');
+  function showOrigin() {
+    try {
+      if (originMarker) { window.map.removeLayer(originMarker); originMarker = null; }
+      if (origin && window.L) originMarker = window.L.circleMarker([origin[0], origin[1]], { radius: 9, color: '#c2185b', weight: 3, fillColor: '#fff', fillOpacity: 1 }).addTo(window.map).bindTooltip(origin[2]);
+    } catch (e) {}
+  }
+  function clearOrigin() {
+    origin = null; showOrigin();
+    addrMsg.innerHTML = '';
+    render();
+  }
+  var geoBusy = false;
+  function searchPlace() {
+    var text = addrInput.value.trim();
+    if (!text || geoBusy) return;
+    geoBusy = true;
+    addrMsg.textContent = '搜尋中…';
+    var url = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=tw&accept-language=zh-TW&q=' + encodeURIComponent(text);
+    fetch(url).then(function (r) { return r.ok ? r.json() : []; }).then(function (res) {
+      geoBusy = false;
+      if (!res || !res.length) { addrMsg.innerHTML = '<span style="color:#e65100">找不到「' + esc(text) + '」，試試更完整的地址或地標名稱</span>'; return; }
+      var p = res[0], name = (p.name || p.display_name || text).split(',')[0];
+      origin = [+p.lat, +p.lon, name];
+      try { window.map.setView([origin[0], origin[1]], 16); } catch (e) {}
+      showOrigin();
+      addrMsg.innerHTML = '📍 以「<b>' + esc(name) + '</b>」為中心計算距離　<span id="dmx-addr-x" style="color:#1565c0;cursor:pointer">改回我的位置</span>';
+      addrMsg.querySelector('#dmx-addr-x').onclick = clearOrigin;
+      render();
+    }).catch(function () { geoBusy = false; addrMsg.innerHTML = '<span style="color:#e65100">搜尋失敗，請檢查網路後再試一次</span>'; });
+  }
+  geoBar.querySelector('#dmx-addr-go').onclick = searchPlace;
+  addrInput.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); addrInput.blur(); searchPlace(); } };
   var body = box.querySelector('#dmx-body'), minBtn = box.querySelector('#dmx-min');
   function collapse(on) { body.style.display = on ? 'none' : 'flex'; minBtn.textContent = on ? '＋' : '－'; }
   minBtn.onclick = function () { collapse(body.style.display !== 'none'); };
@@ -237,14 +279,15 @@
   function render() {
     /* 已結束的團體戰不顯示 */
     var all = Object.keys(store).map(function (k) { return store[k]; }).filter(alive);
-    /* 有定位就算出每個點的距離；選了距離範圍就只留範圍內的點 */
+    /* 距離基準點：搜尋的地點優先，其次是手機定位；選了距離範圍就只留範圍內的點 */
     if (radius) locate();
-    if (me) all.forEach(function (x) { x.__dist = dist(me[0], me[1], +x.c, +x.d); });
-    if (radius && me) all = all.filter(function (x) { return x.__dist <= radius * 1000; });
-    kmMsg.textContent = radius && !me ? (locMsg || '取得定位中…') : '';
+    var here = origin || me;
+    if (here) all.forEach(function (x) { x.__dist = dist(here[0], here[1], +x.c, +x.d); });
+    if (radius && here) all = all.filter(function (x) { return x.__dist <= radius * 1000; });
+    kmMsg.textContent = radius && !here ? (locMsg || '取得定位中…') : '';
     var MODE_NAME = { all: '全部', R: '團體戰', D: '極巨', G: '超極巨', '?': '未知' };
     filterToggle.innerHTML = (filterOpen ? '▾' : '▸') + ' 篩選與排序：<b>' + MODE_NAME[mode] + '・' + (sortBy === 'time' ? '時間' : '距離') + '・' +
-      (radius ? radius + ' 公里內' : '不限距離') + '</b>' + (radius && !me ? ' <span style="color:#e65100">（' + esc(locMsg || '取得定位中…') + '）</span>' : '');
+      (radius ? radius + ' 公里內' : '不限距離') + (origin ? '・以' + esc(origin[2]) + '為中心' : '') + '</b>' + (radius && !here ? ' <span style="color:#e65100">（' + esc(locMsg || '取得定位中…') + '）</span>' : '');
     var cnt = { G: 0, D: 0, R: 0, '?': 0 };
     all.forEach(function (x) { cnt[x.__k]++; });
     var opts = [['all', '全部 ' + all.length], ['R', '團體戰 ' + cnt.R], ['D', '極巨 ' + cnt.D], ['G', '超極巨 ' + cnt.G]];
@@ -276,35 +319,35 @@
           groups[a].length - groups[b].length;
       }).map(function (key) {
         var x = groups[key][0];
-        var near = me ? Math.min.apply(null, groups[key].map(function (y) { return y.__dist; })) : null;
+        var near = here ? Math.min.apply(null, groups[key].map(function (y) { return y.__dist; })) : null;
         return '<div class="dmx-n" data-n="' + esc(pname(x)) + '" style="padding:3px 0;border-top:1px solid #eee;cursor:pointer;display:flex;align-items:center">' +
           img(x, 36) + badge(x) + '&nbsp;' + star(x) + '&nbsp;' + esc(pname(x)) + '&nbsp;<span style="color:#888">× ' + groups[key].length + '</span>' +
           (near !== null ? '&nbsp;<span style="color:#1565c0;font-size:12px">最近 ' + fmtDist(near) + '</span>' : '') + '</div>';
-      }).join('') || '<div style="color:#888;padding:6px 0">' + (radius && me ? radius + ' 公里內沒有，試著放大範圍' : '還沒收集到資料，請拖動一下地圖') + '</div>';
+      }).join('') || '<div style="color:#888;padding:6px 0">' + (radius && here ? radius + ' 公里內沒有，試著放大範圍' : '還沒收集到資料，請拖動一下地圖') + '</div>';
       Array.prototype.forEach.call(list.querySelectorAll('.dmx-n'), function (el) { el.onclick = function () { q.value = el.getAttribute('data-n'); render(); }; });
       return;
     }
     /* 逐筆清單：時間排序 = 越快孵化 / 越快結束的在前（同時間再看距離）；距離排序 = 由近到遠，沒有定位時依種類 */
     locate();
-    var byDist = function (a, b) { return me ? a.__dist - b.__dist : ORDER[a.__k] - ORDER[b.__k]; };
+    var byDist = function (a, b) { return here ? a.__dist - b.__dist : ORDER[a.__k] - ORDER[b.__k]; };
     if (sortBy === 'time') hits.sort(function (a, b) { return (timeKey(a) - timeKey(b)) || byDist(a, b); });
     else hits.sort(byDist);
-    var locText = me ? '📍 定位精度約 ' + Math.round(me[2]) + ' 公尺' : esc(locMsg || '📍 正在取得定位…');
+    var locText = origin ? '📍 距離從「' + esc(origin[2]) + '」算起' : me ? '📍 定位精度約 ' + Math.round(me[2]) + ' 公尺' : esc(locMsg || '📍 正在取得定位…');
     var locLine = '<div style="font-size:12px;color:#666;padding:4px 0">' +
-      (sortBy === 'time' ? '⏱ 依時間排序：蛋看孵化時間、王看結束時間　' + locText : (me ? '📍 已依距離排序（定位精度約 ' + Math.round(me[2]) + ' 公尺）' : locText)) +
-      '　<span id="dmx-relocate" style="color:#1565c0;cursor:pointer">重新定位</span></div>';
+      (sortBy === 'time' ? '⏱ 依時間排序：蛋看孵化時間、王看結束時間　' + locText : (origin ? '📍 依距離「' + esc(origin[2]) + '」由近到遠排序' : me ? '📍 已依距離排序（定位精度約 ' + Math.round(me[2]) + ' 公尺）' : locText)) +
+      '　<span id="dmx-relocate" style="color:#1565c0;cursor:pointer">' + (origin ? '改回我的位置' : '重新定位') + '</span></div>';
     list.innerHTML = locLine + (hits.map(function (x, i) {
       var v = (x.v || '').split('^');
       var raw = x.__k === '?' ? '<br><span style="color:#999;font-size:11px">n=' + esc(x.n) + '　v=' + esc(x.v) + '</span>' : '';
-      var d = me ? ' <span style="background:#e3f2fd;color:#1565c0;border-radius:3px;padding:0 4px;font-size:12px;font-weight:bold">' + fmtDist(x.__dist) + '</span>' : '';
+      var d = here ? ' <span style="background:#e3f2fd;color:#1565c0;border-radius:3px;padding:0 4px;font-size:12px;font-weight:bold">' + fmtDist(x.__dist) + '</span>' : '';
       var t = timeInfo(x);
       return '<div style="padding:6px 0;border-top:1px solid #eee;display:flex;gap:6px"><div>' + img(x, 48) + '</div><div>' +
         badge(x) + ' ' + star(x) + ' <b>' + esc(pname(x)) + '</b>' + d + ' <span style="color:#888">' + esc(v.slice(2, 4).filter(Boolean).join('/')) + '</span><br>' +
         esc(x.g || '(未命名)') + (t ? '<br><span style="color:#e65100;font-size:13px">' + esc(t) + '</span>' : '') + raw +
         '<br><span class="dmx-go" data-i="' + i + '" style="color:#1565c0;cursor:pointer">在地圖上顯示</span>　' +
         '<a href="https://maps.google.com/?q=' + x.c + ',' + x.d + '" target="_blank" style="color:#c2185b">Google 導航</a></div></div>';
-    }).join('') || '<div style="color:#888;padding:6px 0">' + (radius && me ? radius + ' 公里內沒有，試著放大範圍' : '目前收集到的範圍內沒有，試著拖動或縮小地圖') + '</div>');
-    list.querySelector('#dmx-relocate').onclick = function () { me = null; locMsg = ''; locPending = false; render(); };
+    }).join('') || '<div style="color:#888;padding:6px 0">' + (radius && here ? radius + ' 公里內沒有，試著放大範圍' : '目前收集到的範圍內沒有，試著拖動或縮小地圖') + '</div>');
+    list.querySelector('#dmx-relocate').onclick = function () { if (origin) { clearOrigin(); return; } me = null; locMsg = ''; locPending = false; render(); };
     Array.prototype.forEach.call(list.querySelectorAll('.dmx-go'), function (el) {
       el.onclick = function () {
         var x = hits[+el.getAttribute('data-i')];
