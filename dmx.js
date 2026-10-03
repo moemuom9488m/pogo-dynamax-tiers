@@ -282,7 +282,7 @@
 
   /* 打字時的建議：最近搜尋 → 已收集的道館 / 能量點 → Photon 地點建議（Nominatim 禁止拿來做自動完成，所以用專為自動完成設計的 Photon） */
   var sugItems = [], sugTimer = null, sugSeq = 0;
-  function hideSug() { sugBox.style.display = 'none'; sugItems = []; }
+  function hideSug() { sugBox.style.display = 'none'; sugItems = []; syncBack(); }
   function drawSug(text, places) {
     var t = text.toLowerCase();
     var items = [], seen = {};
@@ -302,12 +302,13 @@
     }
     (places || []).forEach(function (p) { add('📍', p.name, p.sub, p.lat, p.lon); });
     sugItems = items.slice(0, 10);
-    if (!sugItems.length) { sugBox.style.display = 'none'; return; }
+    if (!sugItems.length) { sugBox.style.display = 'none'; syncBack(); return; }
     sugBox.innerHTML = sugItems.map(function (s, i) {
       return '<div class="dmx-sug-i" data-i="' + i + '" style="padding:' + (mobile ? '9px 10px' : '6px 8px') + ';border-top:' + (i ? '1px solid #f0f0f0' : '0') + ';cursor:pointer;font-size:14px">' +
         s.icon + ' ' + esc(s.name) + ' <span style="color:#999;font-size:12px">' + esc(s.sub || '') + '</span></div>';
     }).join('');
     sugBox.style.display = 'block';
+    syncBack();
     Array.prototype.forEach.call(sugBox.querySelectorAll('.dmx-sug-i'), function (el) {
       /* 用 mousedown 先擋住失焦，點選才不會因為輸入框 blur 而被收掉 */
       el.onmousedown = function (e) { e.preventDefault(); };
@@ -342,14 +343,47 @@
     else if (e.key === 'Escape') hideSug();
   };
   var body = box.querySelector('#dmx-body'), minBtn = box.querySelector('#dmx-min');
-  function collapse(on) { body.style.display = on ? 'none' : 'flex'; minBtn.textContent = on ? '＋' : '－'; }
-  minBtn.onclick = function () { collapse(body.style.display !== 'none'); };
-  box.querySelector('#dmx-x').onclick = function () { box.style.display = 'none'; };
+  function collapse(on) { body.style.display = on ? 'none' : 'flex'; minBtn.textContent = on ? '＋' : '－'; syncBack(); }
+  minBtn.onclick = function () { mapView = false; collapse(body.style.display !== 'none'); };
+  box.querySelector('#dmx-x').onclick = function () { box.style.display = 'none'; mapView = false; syncBack(); };
   q.oninput = render;
+
+  /* 手機返回鍵：每次只關掉最上面一層，由內到外是
+     地點建議 → 從「在地圖上顯示」回到清單 → 清除寶可夢搜尋 → 摺疊篩選 → 收合面板 → 一般返回（離開網頁）。
+     做法是有任何一層開著時，在瀏覽紀錄裡多放一筆標記；按返回會先回到這筆標記，觸發 popstate 讓我們關一層 */
+  var mapView = false, backArmed = false, skipPop = false;
+  function topLayer() {
+    if (box.style.display === 'none') return '';
+    if (sugBox.style.display === 'block') return 'sug';
+    if (mapView) return 'map';
+    if (q.value.trim()) return 'search';
+    if (filterOpen) return 'filter';
+    if (body.style.display !== 'none') return 'panel';
+    return '';
+  }
+  function syncBack() {
+    var layer = topLayer();
+    try {
+      if (layer && !backArmed) { history.pushState({ dmx: 1 }, '', location.href); backArmed = true; }
+      else if (!layer && backArmed) { backArmed = false; skipPop = true; history.back(); }
+    } catch (e) {}
+  }
+  window.addEventListener('popstate', function () {
+    if (skipPop) { skipPop = false; return; }
+    backArmed = false;
+    var layer = topLayer();
+    if (layer === 'sug') { hideSug(); addrInput.blur(); }
+    else if (layer === 'map') { mapView = false; collapse(false); }
+    else if (layer === 'search') { q.value = ''; render(); }
+    else if (layer === 'filter') { filterOpen = false; filterBox.style.display = 'none'; render(); }
+    else if (layer === 'panel') { collapse(true); }
+    syncBack();
+  });
 
   function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
   function render() {
+    syncBack();
     /* 已結束的團體戰不顯示 */
     var all = Object.keys(store).map(function (k) { return store[k]; }).filter(alive);
     /* 距離基準點：搜尋的地點優先，其次是手機定位；選了距離範圍就只留範圍內的點 */
@@ -424,7 +458,7 @@
     Array.prototype.forEach.call(list.querySelectorAll('.dmx-go'), function (el) {
       el.onclick = function () {
         var x = hits[+el.getAttribute('data-i')];
-        try { window.map.setView([+x.c, +x.d], 18); if (mobile) collapse(true); } catch (e) { window.open('https://maps.google.com/?q=' + x.c + ',' + x.d); }
+        try { window.map.setView([+x.c, +x.d], 18); if (mobile) { mapView = true; collapse(true); } } catch (e) { window.open('https://maps.google.com/?q=' + x.c + ',' + x.d); }
       };
     });
   }
