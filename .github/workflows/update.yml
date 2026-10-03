@@ -1,0 +1,26 @@
+name: 更新極巨化星級表
+
+on:
+  schedule:
+    - cron: '0 4 * * *'   # 每天 UTC 04:00 = 台灣時間 12:00
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/scrape.js
+      - name: 有變化才 commit
+        run: |
+          if git diff --quiet tiers.json; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "更新星級表 $(date -u +%F)"
+          git push
