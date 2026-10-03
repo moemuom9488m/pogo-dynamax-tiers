@@ -196,14 +196,19 @@
     '<span><span id="dmx-min" style="cursor:pointer;padding:0 10px;font-size:18px">－</span><span id="dmx-x" style="cursor:pointer;padding:0 6px 0 10px;font-size:18px">✕</span></span></div>' +
     '<div id="dmx-body" style="display:flex;flex-direction:column;min-height:0;flex:1">' +
     '<div style="padding:8px"><input id="dmx-q" type="search" placeholder="輸入寶可夢名稱，例如：列陣兵、蛋" style="width:100%;box-sizing:border-box;padding:' + (mobile ? '10px' : '6px') + ';border:1px solid #ccc;border-radius:6px;font-size:16px">' +
-    '<div id="dmx-m" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"></div>' +
+    '<div id="dmx-ft" style="margin-top:6px;font-size:13px;color:#c2185b;cursor:pointer;user-select:none;padding:' + (mobile ? '4px 0' : '2px 0') + '"></div>' +
+    '<div id="dmx-f" style="display:none">' +
+    '<div id="dmx-m" style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap"></div>' +
     '<div id="dmx-o" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div>' +
-    '<div id="dmx-r" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div>' +
+    '<div id="dmx-r" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div></div>' +
     '<div id="dmx-s" style="color:#666;font-size:12px;margin-top:4px"></div></div>' +
     '<div id="dmx-l" style="overflow:auto;-webkit-overflow-scrolling:touch;padding:0 8px 8px"></div></div>';
   document.body.appendChild(box);
   var q = box.querySelector('#dmx-q'), list = box.querySelector('#dmx-l'), stat = box.querySelector('#dmx-s'), modes = box.querySelector('#dmx-m');
   var sortBar = box.querySelector('#dmx-o');
+  /* 篩選與排序區塊：預設摺疊，摺疊時顯示目前條件的摘要 */
+  var filterBox = box.querySelector('#dmx-f'), filterToggle = box.querySelector('#dmx-ft'), filterOpen = false;
+  filterToggle.onclick = function () { filterOpen = !filterOpen; filterBox.style.display = filterOpen ? 'block' : 'none'; render(); };
   /* 範圍輸入框只建立一次，render 時不重畫，打字才不會被打斷 */
   var radiusBar = box.querySelector('#dmx-r');
   radiusBar.innerHTML = '<span style="font-size:13px;color:#666">📍 只顯示</span>' +
@@ -237,6 +242,9 @@
     if (me) all.forEach(function (x) { x.__dist = dist(me[0], me[1], +x.c, +x.d); });
     if (radius && me) all = all.filter(function (x) { return x.__dist <= radius * 1000; });
     kmMsg.textContent = radius && !me ? (locMsg || '取得定位中…') : '';
+    var MODE_NAME = { all: '全部', R: '團體戰', D: '極巨', G: '超極巨', '?': '未知' };
+    filterToggle.innerHTML = (filterOpen ? '▾' : '▸') + ' 篩選與排序：<b>' + MODE_NAME[mode] + '・' + (sortBy === 'time' ? '時間' : '距離') + '・' +
+      (radius ? radius + ' 公里內' : '不限距離') + '</b>' + (radius && !me ? ' <span style="color:#e65100">（' + esc(locMsg || '取得定位中…') + '）</span>' : '');
     var cnt = { G: 0, D: 0, R: 0, '?': 0 };
     all.forEach(function (x) { cnt[x.__k]++; });
     var opts = [['all', '全部 ' + all.length], ['R', '團體戰 ' + cnt.R], ['D', '極巨 ' + cnt.D], ['G', '超極巨 ' + cnt.G]];
