@@ -56,32 +56,56 @@
     };
   }
 
-  /* PokeAPI 縮圖：一般用圖鑑編號直接組網址；超極巨化查 /pokemon/{英文名}-gmax，結果存在 localStorage */
+  /* PokeAPI 縮圖：一般用圖鑑編號直接組網址；超極巨化、Mega、地區型態查 /pokemon/{英文名}-{型態}，結果存在 localStorage */
   var SPRITE = 'https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/';
-  var gmaxCache = {};
-  try { gmaxCache = JSON.parse(localStorage.getItem('dmx_gmax') || '{}'); } catch (e) {}
-  var gmaxPending = {};
+  var spriteCache = {};
+  try { spriteCache = JSON.parse(localStorage.getItem('dmx_sprite') || '{}'); } catch (e) {}
+  var spritePending = {};
   /* PokeAPI 上有型態後綴的超極巨化名稱 */
   var GMAX_SLUG = { 849: 'toxtricity-amped-gmax', 892: 'urshifu-single-strike-gmax' };
+  var FORM_SUFFIX = { GALARIAN: 'galar', ALOLA: 'alola', ALOLAN: 'alola', HISUIAN: 'hisui', PALDEA: 'paldea' };
+  function baseSlug(id) {
+    return (enNames[id] || '').toLowerCase().replace(/['’.]/g, '').replace(/♀/g, '-f').replace(/♂/g, '-m').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+  /* 依序嘗試的 PokeAPI 名稱；回傳空陣列代表直接用一般的圖 */
+  function variantSlugs(x) {
+    var id = x.j, base = baseSlug(id);
+    if (!base) return [];
+    if (x.__k === 'G') return [GMAX_SLUG[id] || base + '-gmax'];
+    if (x.__k === 'R' && raidType(x) === 'mega') return [base + '-mega', base + '-mega-x', base + '-mega-y'];
+    var f = (String(x.v || '').split('^')[4] || '').toUpperCase();
+    if (FORM_SUFFIX[f]) return [base + '-' + FORM_SUFFIX[f]];
+    return [];
+  }
+  function lookup(key, slugs) {
+    if (!slugs.length) { spriteCache[key] = ''; try { localStorage.setItem('dmx_sprite', JSON.stringify(spriteCache)); } catch (e) {} render(); return; }
+    fetch('https://pokeapi.co/api/v2/pokemon/' + slugs[0]).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var url = j && j.sprites && j.sprites.front_default;
+        if (!url) return lookup(key, slugs.slice(1));
+        spriteCache[key] = url;
+        try { localStorage.setItem('dmx_sprite', JSON.stringify(spriteCache)); } catch (e) {}
+        render();
+      }).catch(function () { spriteCache[key] = ''; });
+  }
   function spriteUrl(x) {
-    if (x.__k !== 'G') return SPRITE + (+x.j) + '.png';
-    var id = x.j;
-    if (gmaxCache[id] !== undefined) return gmaxCache[id] || (SPRITE + (+id) + '.png');
-    if (!gmaxPending[id] && enNames[id]) {
-      gmaxPending[id] = 1;
-      var slug = GMAX_SLUG[id] || (enNames[id].toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-gmax');
-      fetch('https://pokeapi.co/api/v2/pokemon/' + slug).then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) {
-          gmaxCache[id] = (j && j.sprites && j.sprites.front_default) || '';
-          try { localStorage.setItem('dmx_gmax', JSON.stringify(gmaxCache)); } catch (e) {}
-          render();
-        }).catch(function () { gmaxCache[id] = ''; });
-    }
-    return SPRITE + (+id) + '.png';
+    var plain = SPRITE + (+x.j) + '.png';
+    var slugs = variantSlugs(x);
+    if (!slugs.length) return plain;
+    var key = slugs[0];
+    if (spriteCache[key] !== undefined) return spriteCache[key] || plain;
+    if (!spritePending[key]) { spritePending[key] = 1; lookup(key, slugs); }
+    return plain;
+  }
+  /* 極巨化在遊戲裡是一般外觀加紅色光芒，暗影是紫色光芒，用光暈表示 */
+  function glow(x) {
+    if (x.__k === 'D') return 'filter:drop-shadow(0 0 3px #e53935) drop-shadow(0 0 2px #e53935);';
+    if (x.__k === 'R' && raidType(x) === 'shadow') return 'filter:drop-shadow(0 0 3px #7b1fa2) drop-shadow(0 0 2px #7b1fa2);';
+    return '';
   }
   function img(x, size) {
     if (x.i === 'egg') return '<span style="display:inline-block;width:' + size + 'px;text-align:center;font-size:' + Math.round(size * 0.6) + 'px;vertical-align:middle;margin-right:4px">🥚</span>';
-    return '<img src="' + spriteUrl(x) + '" width="' + size + '" height="' + size + '" loading="lazy" onerror="this.style.visibility=\'hidden\'" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px">';
+    return '<img src="' + spriteUrl(x) + '" width="' + size + '" height="' + size + '" loading="lazy" onerror="this.style.visibility=\'hidden\'" style="vertical-align:middle;image-rendering:pixelated;margin-right:4px;' + glow(x) + '">';
   }
 
   function tag(bg, text) { return '<span style="background:' + bg + ';color:#fff;border-radius:3px;padding:0 4px;font-size:11px">' + text + '</span>'; }
