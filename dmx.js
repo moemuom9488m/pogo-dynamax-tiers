@@ -112,7 +112,7 @@
   var mobile = Math.min(window.innerWidth, screen.width) < 700;
   var box = document.createElement('div');
   box.style.cssText = (mobile
-    ? 'position:fixed;left:0;right:0;bottom:0;max-height:60vh;border-radius:12px 12px 0 0;font:16px "Microsoft JhengHei",sans-serif;'
+    ? 'position:fixed;left:0;right:0;bottom:0;max-height:50vh;border-radius:12px 12px 0 0;font:16px "Microsoft JhengHei",sans-serif;'
     : 'position:fixed;top:10px;left:10px;width:340px;max-height:85vh;border-radius:8px;font:14px "Microsoft JhengHei",sans-serif;') +
     'z-index:99999;display:flex;flex-direction:column;background:#fff;color:#222;border:2px solid #c2185b;box-shadow:0 4px 16px rgba(0,0,0,.3)';
   box.innerHTML = '<div id="dmx-h" style="padding:' + (mobile ? '10px 12px' : '8px') + ';background:#c2185b;color:#fff;display:flex;justify-content:space-between;align-items:center;border-radius:' + (mobile ? '9px 9px 0 0' : '0') + '"><b>極巨化 / 超極巨化搜尋</b>' +
