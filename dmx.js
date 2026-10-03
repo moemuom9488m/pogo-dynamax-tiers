@@ -144,6 +144,13 @@
   }
   var ORDER = { G: 0, D: 1, R: 2, '?': 3 };
   var mode = 'all';
+  /* 距離篩選（公里，0 = 不限），記在瀏覽器裡 */
+  var RADII = [0, 1, 3, 5, 10];
+  var radius = 0;
+  try { radius = +localStorage.getItem('dmx_radius') || 0; } catch (e) {}
+  function chip(attr, val, label, on) {
+    return '<span ' + attr + '="' + val + '" style="cursor:pointer;padding:' + (mobile ? '6px 12px' : '2px 8px') + ';border-radius:14px;font-size:' + (mobile ? '14px' : '12px') + ';border:1px solid #c2185b;' + (on ? 'background:#c2185b;color:#fff' : 'color:#c2185b') + '">' + label + '</span>';
+  }
 
   /* 目前位置：[緯度, 經度, 精度公尺] */
   var me = null, locMsg = '', locPending = false;
@@ -181,10 +188,12 @@
     '<div id="dmx-body" style="display:flex;flex-direction:column;min-height:0;flex:1">' +
     '<div style="padding:8px"><input id="dmx-q" type="search" placeholder="輸入寶可夢名稱，例如：列陣兵、蛋" style="width:100%;box-sizing:border-box;padding:' + (mobile ? '10px' : '6px') + ';border:1px solid #ccc;border-radius:6px;font-size:16px">' +
     '<div id="dmx-m" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"></div>' +
+    '<div id="dmx-r" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;align-items:center"></div>' +
     '<div id="dmx-s" style="color:#666;font-size:12px;margin-top:4px"></div></div>' +
     '<div id="dmx-l" style="overflow:auto;-webkit-overflow-scrolling:touch;padding:0 8px 8px"></div></div>';
   document.body.appendChild(box);
   var q = box.querySelector('#dmx-q'), list = box.querySelector('#dmx-l'), stat = box.querySelector('#dmx-s'), modes = box.querySelector('#dmx-m');
+  var radiusBar = box.querySelector('#dmx-r');
   var body = box.querySelector('#dmx-body'), minBtn = box.querySelector('#dmx-min');
   function collapse(on) { body.style.display = on ? 'none' : 'flex'; minBtn.textContent = on ? '＋' : '－'; }
   minBtn.onclick = function () { collapse(body.style.display !== 'none'); };
@@ -196,14 +205,26 @@
   function render() {
     /* 已結束的團體戰不顯示 */
     var all = Object.keys(store).map(function (k) { return store[k]; }).filter(alive);
+    /* 有定位就算出每個點的距離；選了距離範圍就只留範圍內的點 */
+    if (radius) locate();
+    if (me) all.forEach(function (x) { x.__dist = dist(me[0], me[1], +x.c, +x.d); });
+    if (radius && me) all = all.filter(function (x) { return x.__dist <= radius * 1000; });
+    radiusBar.innerHTML = '<span style="font-size:12px;color:#666">📍範圍</span>' + RADII.map(function (r) {
+      return chip('data-r', r, r ? r + ' 公里' : '不限', radius === r);
+    }).join('') + (radius && !me ? '<span style="font-size:12px;color:#e65100">' + esc(locMsg || '取得定位中…') + '</span>' : '');
+    Array.prototype.forEach.call(radiusBar.querySelectorAll('[data-r]'), function (el) {
+      el.onclick = function () {
+        radius = +el.getAttribute('data-r');
+        try { localStorage.setItem('dmx_radius', radius); } catch (e) {}
+        if (radius && locMsg) { locMsg = ''; }
+        render();
+      };
+    });
     var cnt = { G: 0, D: 0, R: 0, '?': 0 };
     all.forEach(function (x) { cnt[x.__k]++; });
     var opts = [['all', '全部 ' + all.length], ['R', '團體戰 ' + cnt.R], ['D', '極巨 ' + cnt.D], ['G', '超極巨 ' + cnt.G]];
     if (cnt['?']) opts.push(['?', '未知 ' + cnt['?']]);
-    modes.innerHTML = opts.map(function (o) {
-      var on = mode === o[0];
-      return '<span data-m="' + o[0] + '" style="cursor:pointer;padding:' + (mobile ? '6px 12px' : '2px 8px') + ';border-radius:14px;font-size:' + (mobile ? '14px' : '12px') + ';border:1px solid #c2185b;' + (on ? 'background:#c2185b;color:#fff' : 'color:#c2185b') + '">' + o[1] + '</span>';
-    }).join('');
+    modes.innerHTML = opts.map(function (o) { return chip('data-m', o[0], o[1], mode === o[0]); }).join('');
     Array.prototype.forEach.call(modes.querySelectorAll('[data-m]'), function (el) { el.onclick = function () { mode = el.getAttribute('data-m'); render(); }; });
 
     var pool = all.filter(function (x) { return mode === 'all' || x.__k === mode; });
@@ -222,16 +243,17 @@
           groups[a].length - groups[b].length;
       }).map(function (key) {
         var x = groups[key][0];
+        var near = me ? Math.min.apply(null, groups[key].map(function (y) { return y.__dist; })) : null;
         return '<div class="dmx-n" data-n="' + esc(pname(x)) + '" style="padding:3px 0;border-top:1px solid #eee;cursor:pointer;display:flex;align-items:center">' +
-          img(x, 36) + badge(x) + '&nbsp;' + star(x) + '&nbsp;' + esc(pname(x)) + '&nbsp;<span style="color:#888">× ' + groups[key].length + '</span></div>';
-      }).join('') || '<div style="color:#888;padding:6px 0">還沒收集到資料，請拖動一下地圖</div>';
+          img(x, 36) + badge(x) + '&nbsp;' + star(x) + '&nbsp;' + esc(pname(x)) + '&nbsp;<span style="color:#888">× ' + groups[key].length + '</span>' +
+          (near !== null ? '&nbsp;<span style="color:#1565c0;font-size:12px">最近 ' + fmtDist(near) + '</span>' : '') + '</div>';
+      }).join('') || '<div style="color:#888;padding:6px 0">' + (radius && me ? radius + ' 公里內沒有，試著放大範圍' : '還沒收集到資料，請拖動一下地圖') + '</div>';
       Array.prototype.forEach.call(list.querySelectorAll('.dmx-n'), function (el) { el.onclick = function () { q.value = el.getAttribute('data-n'); render(); }; });
       return;
     }
     /* 選定寶可夢時取得定位，依距離由近到遠排序；沒有定位時依種類排列 */
     locate();
     if (me) {
-      hits.forEach(function (x) { x.__dist = dist(me[0], me[1], +x.c, +x.d); });
       hits.sort(function (a, b) { return a.__dist - b.__dist; });
     } else {
       hits.sort(function (a, b) { return ORDER[a.__k] - ORDER[b.__k]; });
@@ -249,7 +271,7 @@
         esc(x.g || '(未命名)') + (t ? '<br><span style="color:#e65100;font-size:13px">' + esc(t) + '</span>' : '') + raw +
         '<br><span class="dmx-go" data-i="' + i + '" style="color:#1565c0;cursor:pointer">在地圖上顯示</span>　' +
         '<a href="https://maps.google.com/?q=' + x.c + ',' + x.d + '" target="_blank" style="color:#c2185b">Google 導航</a></div></div>';
-    }).join('') || '<div style="color:#888;padding:6px 0">目前收集到的範圍內沒有，試著拖動或縮小地圖</div>');
+    }).join('') || '<div style="color:#888;padding:6px 0">' + (radius && me ? radius + ' 公里內沒有，試著放大範圍' : '目前收集到的範圍內沒有，試著拖動或縮小地圖') + '</div>');
     list.querySelector('#dmx-relocate').onclick = function () { me = null; locMsg = ''; locPending = false; render(); };
     Array.prototype.forEach.call(list.querySelectorAll('.dmx-go'), function (el) {
       el.onclick = function () {
