@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>極巨化搜尋</title>
+<style>
+  :root { --bg:#fff; --fg:#222; --muted:#666; --card:#f6f7f9; --line:#e0e0e0; --accent:#c2185b; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#16181c; --fg:#e8e8ea; --muted:#a0a4ab; --card:#202329; --line:#353a42; --accent:#f06292; } }
+  :root[data-theme="dark"] { --bg:#16181c; --fg:#e8e8ea; --muted:#a0a4ab; --card:#202329; --line:#353a42; --accent:#f06292; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.7 system-ui,"Microsoft JhengHei","PingFang TC",sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:18px; margin:28px 0 8px; }
+  .sub { color:var(--muted); margin:0 0 16px; }
+  .code { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px; font:13px/1.4 monospace; word-break:break-all; user-select:all; }
+  .btn { display:inline-block; background:var(--accent); color:#fff; border:0; border-radius:8px; padding:10px 18px; font-size:16px; font-weight:600; text-decoration:none; cursor:pointer; margin:10px 8px 0 0; }
+  .tabs { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+  .tab { border:1px solid var(--accent); color:var(--accent); background:none; border-radius:16px; padding:6px 14px; font-size:15px; cursor:pointer; }
+  .tab[aria-selected="true"] { background:var(--accent); color:#fff; }
+  .panel { display:none; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px 16px; margin-top:10px; }
+  .panel.on { display:block; }
+  li { margin:6px 0; }
+  .note { color:var(--muted); font-size:14px; }
+  #ok { color:#2e7d32; font-weight:600; margin-left:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>極巨化 / 超極巨化搜尋</h1>
+  <p class="sub">在 twpkinfo 道館地圖上，用文字搜尋寶可夢的極巨化點，並依你的位置由近到遠排序。手機、電腦都能用。</p>
+
+  <h2>1. 複製書籤程式碼</h2>
+  <div class="code" id="code">javascript:(function(){if(window.__dmx){window.__dmx.show();return}var s=document.createElement('script');s.src='https://moemuom9488m.github.io/pogo-dynamax-tiers/dmx.js?t='+Date.now();document.body.appendChild(s)})()</div>
+  <button class="btn" id="copy">複製程式碼</button><span id="ok"></span>
+  <p class="note">電腦版也可以直接把這個按鈕拖到書籤列：<a class="btn" href="javascript:(function(){if(window.__dmx){window.__dmx.show();return}var s=document.createElement('script');s.src='https://moemuom9488m.github.io/pogo-dynamax-tiers/dmx.js?t='+Date.now();document.body.appendChild(s)})()" onclick="event.preventDefault()">極巨化搜尋</a></p>
+
+  <h2>2. 建立書籤</h2>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" data-t="android" aria-selected="true">Android（Chrome）</button>
+    <button class="tab" role="tab" data-t="ios" aria-selected="false">iPhone（Safari）</button>
+  </div>
+  <div class="panel on" id="android">
+    <ol>
+      <li>在<b>這個頁面</b>點右上角「⋮」→ 點「☆」把它加入書籤</li>
+      <li>再點「⋮」→「書籤」，找到剛剛那個書籤，長按 →「編輯」</li>
+      <li>名稱改成 <b>dmx</b>（短一點比較好打）</li>
+      <li>網址整個刪掉，<b>貼上</b>剛剛複製的程式碼，儲存</li>
+    </ol>
+  </div>
+  <div class="panel" id="ios">
+    <ol>
+      <li>在<b>這個頁面</b>點下方的「分享」按鈕 →「加入書籤」→ 儲存</li>
+      <li>點下方的「書籤」圖示（打開的書本），點「編輯」</li>
+      <li>點剛剛那個書籤，名稱改成 <b>極巨化搜尋</b></li>
+      <li>網址整個刪掉，<b>貼上</b>剛剛複製的程式碼，按「完成」</li>
+    </ol>
+  </div>
+
+  <h2>3. 使用</h2>
+  <ol>
+    <li>打開 <a href="https://twpkinfo.com/igym.aspx" target="_blank" rel="noopener">twpkinfo 道館地圖</a></li>
+    <li>
+      <b>Android：</b>點網址列，輸入 <b>dmx</b>，在下拉選單裡點那個<b>書籤</b>（有星號圖示的那一列，不是搜尋建議）<br>
+      <b>iPhone：</b>點「書籤」圖示 → 點「極巨化搜尋」
+    </li>
+    <li>畫面下方會出現搜尋面板。<b>先拖動一下地圖</b>，讓它收集資料</li>
+    <li>輸入或點選寶可夢，第一次會詢問位置權限，請按「允許」，結果就會依距離排序</li>
+    <li>點「在地圖上顯示」會跳到那個位置，面板也會自動收合；點「＋」可以展開回來</li>
+  </ol>
+  <p class="note">星級表每天從 Snack Nap 自動更新，工具功能更新時也不用重新設定書籤。這個工具只會讀取網頁自己已經載入的資料，不會另外向 twpkinfo 發出請求。</p>
+</main>
+<script>
+document.getElementById('copy').onclick = async () => {
+  const text = document.getElementById('code').textContent;
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const r = document.createRange(); r.selectNodeContents(document.getElementById('code'));
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.execCommand('copy');
+  }
+  document.getElementById('ok').textContent = '已複製 ✓';
+};
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', x === t));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('on', p.id === t.dataset.t));
+});
+if (/iPhone|iPad|iPod/.test(navigator.userAgent)) document.querySelector('[data-t=ios]').click();
+</script>
+</body>
+</html>
